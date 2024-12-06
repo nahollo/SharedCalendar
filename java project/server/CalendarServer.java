@@ -1,10 +1,11 @@
+package server;
+
 import java.io.*;
 import java.net.*;
 import java.util.*;
 
 public class CalendarServer {
     private static List<ClientHandler> clients = new ArrayList<>();
-    private static Map<String, String> userDatabase = new HashMap<>();
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(7890)) {
@@ -25,6 +26,7 @@ public class CalendarServer {
         private Socket socket;
         private PrintWriter out;
         private BufferedReader in;
+        private String userEmail;
 
         public ClientHandler(Socket socket) {
             this.socket = socket;
@@ -43,17 +45,17 @@ public class CalendarServer {
                     String content = parts.length > 1 ? parts[1] : "";
 
                     switch (command) {
-                        case "REGISTER":
-                            handleRegistration(content);
-                            break;
-                        case "LOGIN":
-                            handleLogin(content);
-                            break;
                         case "MESSAGE":
                             broadcastMessage(content, this);
                             break;
+                        case "ADD_SCHEDULE":
+                            handleAddSchedule(content);
+                            break;
+                        case "GET_SCHEDULES":
+                            handleGetSchedules(content);
+                            break;
                         default:
-                            System.out.println("알 수 없는 명령: " + command);
+                            out.println("ERROR: 알 수 없는 명령어입니다.");
                     }
                 }
             } catch (IOException e) {
@@ -67,37 +69,45 @@ public class CalendarServer {
             }
         }
 
-        private void handleRegistration(String content) {
-            String[] data = content.split(",");
-            String email = data[0].trim();
-            String name = data[1].trim();
-            String password = data[2].trim();
-
-            if (userDatabase.containsKey(email)) {
-                out.println("REGISTRATION_FAILED: 이미 사용 중인 이메일입니다.");
-            } else {
-                userDatabase.put(email, password);
-                out.println("REGISTRATION_SUCCESS: 회원가입이 완료되었습니다.");
-            }
-        }
-
-        private void handleLogin(String content) {
-            String[] data = content.split(",");
-            String email = data[0].trim();
-            String password = data[1].trim();
-
-            if (userDatabase.containsKey(email) && userDatabase.get(email).equals(password)) {
-                out.println("LOGIN_SUCCESS: 로그인 성공!");
-            } else {
-                out.println("LOGIN_FAILED: 로그인 실패. 이메일과 비밀번호를 확인하세요.");
-            }
-        }
-
         private void broadcastMessage(String message, ClientHandler sender) {
             for (ClientHandler client : clients) {
                 if (client != sender) {
-                    client.out.println("MESSAGE:" + message);
+                    client.out.println("MESSAGE:" + sender.userEmail + ": " + message);
                 }
+            }
+        }
+
+        private void handleAddSchedule(String content) {
+            // 캘린더 일정 추가 기능 (DB와 연결 해제)
+            String[] data = content.split(",");
+            if (data.length >= 3) {
+                String startDate = data[0].trim();
+                String endDate = data[1].trim();
+                String title = data[2].trim();
+
+                // 단순 캘린더 데이터 출력
+                System.out.println("새 일정 추가:");
+                System.out.println("시작일: " + startDate + ", 종료일: " + endDate + ", 제목: " + title);
+
+                out.println("SCHEDULE_ADDED");
+            } else {
+                out.println("ERROR: Invalid data format.");
+            }
+        }
+
+        private void handleGetSchedules(String content) {
+            // 캘린더 일정 조회 기능 (DB와 연결 해제)
+            String date = content.trim();
+
+            // 임시 일정 데이터
+            List<String> schedules = Arrays.asList(
+                    "회의 (" + date + " 10:00 ~ 12:00)",
+                    "개발 리뷰 (" + date + " 14:00 ~ 15:00)");
+
+            if (schedules.isEmpty()) {
+                out.println("SCHEDULES:일정이 없습니다;");
+            } else {
+                out.println("SCHEDULES:" + String.join(";", schedules));
             }
         }
     }

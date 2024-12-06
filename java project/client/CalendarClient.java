@@ -1,6 +1,10 @@
+package client;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.*;
+
+import ui.CalendarUI;
 
 public class CalendarClient {
     private Socket socket;
@@ -11,11 +15,13 @@ public class CalendarClient {
         socket = new Socket(serverAddress, port);
         out = new PrintWriter(socket.getOutputStream(), true);
         in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        System.out.println("서버에 연결되었습니다.");
+
+        // 메시지 수신 스레드 실행
+        new Thread(this::receiveMessages).start();
     }
 
-    public void register(String email, String name, String password) {
-        out.println("REGISTER:" + email + "," + name + "," + password);
+    public void register(String email, String name, String password, String companyName) {
+        out.println("REGISTER:" + email + "," + name + "," + password + "," + companyName);
         try {
             String response = in.readLine();
             System.out.println(response);
@@ -39,13 +45,17 @@ public class CalendarClient {
         out.println("MESSAGE:" + message);
     }
 
-    public String receiveMessage() {
+    private void receiveMessages() {
         try {
-            return in.readLine();
+            String message;
+            while ((message = in.readLine()) != null) {
+                if (message.startsWith("MESSAGE:")) {
+                    System.out.println(message.substring(8)); // 메시지 출력
+                }
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return null;
     }
 
     public void close() {
@@ -59,7 +69,7 @@ public class CalendarClient {
     public static void main(String[] args) {
         try {
             CalendarClient client = new CalendarClient("localhost", 7890);
-            new LoginUI(client);
+            new CalendarUI(client); // 캘린더 UI 실행
         } catch (IOException e) {
             e.printStackTrace();
         }

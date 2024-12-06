@@ -1,6 +1,8 @@
+package ui;
+
+import client.CalendarClient;
 
 import javax.swing.*;
-
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -12,27 +14,25 @@ public class CalendarUI extends JFrame {
     private JButton[][] dayButtons;
     private Calendar calendar;
     private CalendarClient client;
-
-    private JPanel chatArea;
+    private JTextArea chatArea;
     private JTextField chatInput;
-    private JScrollPane chatScrollPane;
 
     public CalendarUI(CalendarClient client) {
         this.client = client;
         calendar = new GregorianCalendar();
 
-        setTitle("공유 캘린더 및 채팅");
-        setSize(600, 400);
+        setTitle("공유 캘린더");
+        setSize(800, 600); // 크기 확장
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
+        // 캘린더 패널
         JPanel calendarPanel = createCalendarPanel();
         add(calendarPanel, BorderLayout.CENTER);
 
+        // 채팅 패널
         JPanel chatPanel = createChatPanel();
         add(chatPanel, BorderLayout.EAST);
-
-        new Thread(new IncomingMessageHandler()).start();
 
         setVisible(true);
     }
@@ -71,9 +71,8 @@ public class CalendarUI extends JFrame {
         for (int i = 0; i < 6; i++) {
             for (int j = 0; j < 7; j++) {
                 dayButtons[i][j] = new JButton();
-                dayButtons[i][j].setFont(new Font("Arial", Font.PLAIN, 12));
+                dayButtons[i][j].setFont(new Font("Arial", Font.PLAIN, 10));
                 dayButtons[i][j].setEnabled(false);
-                dayButtons[i][j].addActionListener(new DayButtonListener());
                 daysPanel.add(dayButtons[i][j]);
             }
         }
@@ -85,58 +84,31 @@ public class CalendarUI extends JFrame {
     }
 
     private JPanel createChatPanel() {
-        JPanel chatPanel = new JPanel(new BorderLayout());
-        chatPanel.setPreferredSize(new Dimension(250, 400));
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setPreferredSize(new Dimension(250, 0)); // 채팅 패널 크기 설정
 
-        // 채팅 메시지 표시 영역
-        chatArea = new JPanel();
-        chatArea.setLayout(new BoxLayout(chatArea, BoxLayout.Y_AXIS));
-        chatScrollPane = new JScrollPane(chatArea);
-        chatPanel.add(chatScrollPane, BorderLayout.CENTER);
+        // 채팅 기록 표시
+        chatArea = new JTextArea();
+        chatArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(chatArea);
 
-        // 채팅 입력 필드
+        // 채팅 입력
         chatInput = new JTextField();
-        chatPanel.add(chatInput, BorderLayout.SOUTH);
-
-        // 엔터 키로 채팅 메시지 전송
-        chatInput.addActionListener(e -> {
-            String message = chatInput.getText();
-            if (!message.isEmpty()) {
-                client.sendMessage(message);
-                addChatMessage(message, true);
-                chatInput.setText("");
+        chatInput.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String message = chatInput.getText();
+                if (!message.isEmpty()) {
+                    client.sendMessage(message); // 메시지 서버로 전송
+                    chatInput.setText(""); // 입력 필드 초기화
+                }
             }
         });
 
-        return chatPanel;
-    }
+        panel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(chatInput, BorderLayout.SOUTH);
 
-    public void addChatMessage(String message, boolean isMine) {
-        JPanel messagePanel = new JPanel();
-        messagePanel.setLayout(new BoxLayout(messagePanel, BoxLayout.X_AXIS));
-
-        JLabel messageLabel = new JLabel(message);
-        messageLabel.setOpaque(true);
-        messageLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
-
-        if (isMine) {
-            messageLabel.setBackground(Color.YELLOW);
-            messagePanel.add(Box.createHorizontalGlue());
-            messagePanel.add(messageLabel);
-        } else {
-            messageLabel.setBackground(Color.LIGHT_GRAY);
-            messagePanel.add(messageLabel);
-            messagePanel.add(Box.createHorizontalGlue());
-        }
-
-        chatArea.add(messagePanel);
-        chatArea.revalidate();
-        chatArea.repaint();
-
-        SwingUtilities.invokeLater(() -> {
-            JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
-            vertical.setValue(vertical.getMaximum());
-        });
+        return panel;
     }
 
     private void updateCalendar() {
@@ -165,27 +137,8 @@ public class CalendarUI extends JFrame {
         }
     }
 
-    private class DayButtonListener implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            JButton button = (JButton) e.getSource();
-            String day = button.getText();
-            if (!day.isEmpty()) {
-                String selectedDate = monthLabel.getText() + " " + day + "일";
-                JOptionPane.showMessageDialog(CalendarUI.this, "선택한 날짜: " + selectedDate);
-            }
-        }
-    }
-
-    private class IncomingMessageHandler implements Runnable {
-        @Override
-        public void run() {
-            while (true) {
-                String message = client.receiveMessage();
-                if (message != null) {
-                    addChatMessage(message, false);
-                }
-            }
-        }
+    // 채팅 메시지 수신 업데이트 메서드
+    public void updateChatArea(String message) {
+        chatArea.append(message + "\n");
     }
 }
