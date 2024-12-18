@@ -3,9 +3,10 @@ package server;
 import java.io.*;
 import java.net.*;
 import java.util.*;
+import server.DBConnector;
 
 public class CalendarServer {
-    private static List<ClientHandler> clients = new ArrayList<>();
+    private static final List<ClientHandler> clients = Collections.synchronizedList(new ArrayList<>());
 
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(7890)) {
@@ -22,11 +23,12 @@ public class CalendarServer {
         }
     }
 
-    private static class ClientHandler implements Runnable {
-        private Socket socket;
+    static class ClientHandler implements Runnable {
+        private final Socket socket;
         private PrintWriter out;
         private BufferedReader in;
-        private String userEmail;
+        private String username;
+        private int companyId; // 회사 ID 추가
 
         public ClientHandler(Socket socket) {
             this.socket = socket;
@@ -40,74 +42,124 @@ public class CalendarServer {
 
                 String message;
                 while ((message = in.readLine()) != null) {
-                    String[] parts = message.split(":", 2);
-                    String command = parts[0];
-                    String content = parts.length > 1 ? parts[1] : "";
-
-                    switch (command) {
-                        case "MESSAGE":
-                            broadcastMessage(content, this);
-                            break;
-                        case "ADD_SCHEDULE":
-                            handleAddSchedule(content);
-                            break;
-                        case "GET_SCHEDULES":
-                            handleGetSchedules(content);
-                            break;
-                        default:
-                            out.println("ERROR: 알 수 없는 명령어입니다.");
+                    if (message.startsWith("LOGIN:")) {
+                        handleLogin(message);
+                    } else if (message.startsWith("MESSAGE:")) {
+                        handleMessage(message);
                     }
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                disconnect();
+            }
+        }
+
+        private void handleLogin(String message) {
+            String[] parts = message.substring(6).split(":");
+            username = parts[0].trim();
+            companyId = Integer.parseInt(parts[1].trim());
+            System.out.println(username + "님이 로그인하였습니다. 회사 ID: " + companyId);
+            sendUserListToAll();
+        }
+
+        private void handleMessage(String message) {
+            String[] parts = message.substring(8).split(":", 3);
+            if (parts.length == 3) {
+                int chatRoomId = Integer.parseInt(parts[0].trim());
+                String sender = username; // 클라이언트에서 보낸 sender(username)
+                String chatMessage = parts[2].trim();
+
+                // 사용자 ID를 가져옴 (name 기준)
+                int senderId = DBConnector.getUserIdByName(sender);
+                if (senderId == -1) {
+                    System.err.println("유효하지 않은 사용자 ID: " + sender);
+                    return;
+                }
+
+                // 단체 채팅과 개인 채팅을 구분
+                if (chatRoomId == DBConnector.getChatRoomIdForGroupChat(companyId)) {
+                    System.out.println("단체 채팅 메시지 수신: " + sender + ": " + chatMessage);
+                    DBConnector.saveGroupChatMessage(chatRoomId, senderId, chatMessage); // DB에 저장
+                    sendGroupMessage(chatRoomId, sender, chatMessage); // 모든 클라이언트에 전송
+                } else {
+                    System.out.println("개인 채팅 메시지 수신: " + sender + ": " + chatMessage);
+                    DBConnector.saveMessage(chatRoomId, senderId, chatMessage); // DB에 저장
+                    sendMessageToChatRoom(chatRoomId, sender, chatMessage); // 채팅방에 전송
                 }
             }
         }
 
-        private void broadcastMessage(String message, ClientHandler sender) {
-            for (ClientHandler client : clients) {
-                if (client != sender) {
-                    client.out.println("MESSAGE:" + sender.userEmail + ": " + message);
+        private void sendUserListToAll() {
+            StringBuilder userList = new StringBuilder("USERS:");
+            synchronized (clients) {
+                List<String> companyUsers = DBConnector.getUsersByCompany(companyId);
+
+                for (String user : companyUsers) {
+                    boolean isLoggedIn = clients.stream().anyMatch(client -> user.equals(client.username));
+                    userList.append(user).append(":").append(isLoggedIn ? "online" : "offline").append(",");
+                }
+            }
+            if (userList.charAt(userList.length() - 1) == ',') {
+                userList.deleteCharAt(userList.length() - 1);
+            }
+            broadcast(userList.toString());
+        }
+
+        private void sendMessageToChatRoom(int chatRoomId, String sender, String message) {
+            synchronized (clients) {
+                for (ClientHandler client : clients) {
+                    if (client.companyId == this.companyId) {
+                        client.out.println("MESSAGE:" + chatRoomId + ":" + sender + ":" + message);
+                    }
+                }
+                System.out.println("채팅방 " + chatRoomId + "로 메시지 전송: " + sender + ": " + message);
+            }
+
+            // 메시지를 DB에 저장
+            int senderId = DBConnector.getUserIdByUsername(sender);
+            if (senderId != -1) {
+                DBConnector.saveMessage(chatRoomId, senderId, message);
+            }
+        }
+
+        private void sendGroupMessage(int chatRoomId, String sender, String message) {
+            synchronized (clients) {
+                for (ClientHandler client : clients) {
+                    if (client.companyId == this.companyId) {
+                        client.out.println("GROUP_MESSAGE:" + sender + ":" + message);
+                    }
+                }
+                System.out.println("단체 채팅방 " + chatRoomId + "로 메시지 전송: " + sender + ": " + message);
+            }
+
+            // 메시지를 DB에 저장
+            int senderId = DBConnector.getUserIdByUsername(sender);
+            if (senderId != -1) {
+                DBConnector.saveMessage(chatRoomId, senderId, message);
+            }
+        }
+
+        private void broadcast(String message) {
+            synchronized (clients) {
+                for (ClientHandler client : clients) {
+                    if (client.companyId == this.companyId) {
+                        client.out.println(message);
+                    }
                 }
             }
         }
 
-        private void handleAddSchedule(String content) {
-            // 캘린더 일정 추가 기능 (DB와 연결 해제)
-            String[] data = content.split(",");
-            if (data.length >= 3) {
-                String startDate = data[0].trim();
-                String endDate = data[1].trim();
-                String title = data[2].trim();
-
-                // 단순 캘린더 데이터 출력
-                System.out.println("새 일정 추가:");
-                System.out.println("시작일: " + startDate + ", 종료일: " + endDate + ", 제목: " + title);
-
-                out.println("SCHEDULE_ADDED");
-            } else {
-                out.println("ERROR: Invalid data format.");
-            }
-        }
-
-        private void handleGetSchedules(String content) {
-            // 캘린더 일정 조회 기능 (DB와 연결 해제)
-            String date = content.trim();
-
-            // 임시 일정 데이터
-            List<String> schedules = Arrays.asList(
-                    "회의 (" + date + " 10:00 ~ 12:00)",
-                    "개발 리뷰 (" + date + " 14:00 ~ 15:00)");
-
-            if (schedules.isEmpty()) {
-                out.println("SCHEDULES:일정이 없습니다;");
-            } else {
-                out.println("SCHEDULES:" + String.join(";", schedules));
+        private void disconnect() {
+            try {
+                synchronized (clients) {
+                    clients.remove(this);
+                }
+                socket.close();
+                System.out.println(username + " 연결이 해제되었습니다.");
+                sendUserListToAll();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
