@@ -229,6 +229,22 @@ public class DBConnector {
         return -1; // 사용자 ID를 찾을 수 없는 경우
     }
 
+    public static int getUserIdByname(String username) {
+        String query = "SELECT id FROM users WHERE name = ?";
+        try (Connection conn = connect();
+                PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, username); // username 값 설정
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("id"); // 사용자 ID 반환
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        System.err.println("데이터베이스에서 username을 찾을 수 없음: " + username);
+        return -1; // 사용자 ID를 찾을 수 없는 경우
+    }
+
     public static int getUserIdByname(String name, int companyId) {
         String query = "SELECT id FROM users WHERE name = ? AND company_id = ?";
         try (Connection conn = connect();
@@ -423,17 +439,16 @@ public class DBConnector {
 
     // 단체 채팅 메시지 저장
     public static void saveGroupChatMessage(int chatRoomId, int senderId, String content) {
-        String query = "INSERT INTO messages (chat_room_id, sender_id, content, sent_at) VALUES (?, ?, ?, NOW())";
+        String query = "INSERT INTO messages (chat_room_id, sender_id, content) VALUES (?, ?, ?)";
         try (Connection conn = connect();
                 PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.setInt(1, chatRoomId);
             stmt.setInt(2, senderId);
             stmt.setString(3, content);
             stmt.executeUpdate();
-            System.out.println("메시지 저장 완료 (단체채팅): 채팅방ID=" + chatRoomId + ", 보낸사람ID=" + senderId + ", 내용=" + content);
+            System.out.println("단체 채팅 메시지 저장 완료: 채팅방ID=" + chatRoomId + ", 보낸사람ID=" + senderId);
         } catch (SQLException e) {
-            System.err.println("단체 채팅 메시지 저장 중 오류: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("단체 채팅 메시지 저장 실패: " + e.getMessage());
         }
     }
 

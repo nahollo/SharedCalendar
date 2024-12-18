@@ -265,7 +265,16 @@ public class CalendarUI extends JFrame {
                     String sender = parts[2];
                     String chatMessage = parts[3];
 
-                    if (!sender.equals(username) && receivedChatRoomId == chatRoomId) { // 내가 보낸 메시지는 제외
+                    if (!sender.equals(username) && receivedChatRoomId == chatRoomId) {
+                        SwingUtilities.invokeLater(() -> addOtherMessage(sender, chatMessage, getCurrentTime()));
+                    }
+                } else if (message.startsWith("GROUP_MESSAGE:")) { // 단체 채팅 메시지 처리
+                    String[] parts = message.split(":", 4);
+                    int receivedChatRoomId = Integer.parseInt(parts[1]);
+                    String sender = parts[2];
+                    String chatMessage = parts[3];
+
+                    if (receivedChatRoomId == chatRoomId) {
                         SwingUtilities.invokeLater(() -> addOtherMessage(sender, chatMessage, getCurrentTime()));
                     }
                 }

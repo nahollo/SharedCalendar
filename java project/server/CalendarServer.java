@@ -67,25 +67,25 @@ public class CalendarServer {
             String[] parts = message.substring(8).split(":", 3);
             if (parts.length == 3) {
                 int chatRoomId = Integer.parseInt(parts[0].trim());
-                String sender = username; // 클라이언트에서 보낸 sender(username)
+                String sender = username;
                 String chatMessage = parts[2].trim();
 
-                // 사용자 ID를 가져옴 (name 기준)
-                int senderId = DBConnector.getUserIdByName(sender);
+                int senderId = DBConnector.getUserIdByname(sender); // 사용자 ID 가져오기
                 if (senderId == -1) {
                     System.err.println("유효하지 않은 사용자 ID: " + sender);
                     return;
                 }
 
-                // 단체 채팅과 개인 채팅을 구분
                 if (chatRoomId == DBConnector.getChatRoomIdForGroupChat(companyId)) {
-                    System.out.println("단체 채팅 메시지 수신: " + sender + ": " + chatMessage);
+                    // 단체 채팅인 경우
+                    System.out.println("단체 채팅 메시지: " + sender + ": " + chatMessage);
+                    sendGroupMessage(chatRoomId, sender, chatMessage);
                     DBConnector.saveGroupChatMessage(chatRoomId, senderId, chatMessage); // DB에 저장
-                    sendGroupMessage(chatRoomId, sender, chatMessage); // 모든 클라이언트에 전송
                 } else {
-                    System.out.println("개인 채팅 메시지 수신: " + sender + ": " + chatMessage);
+                    // 개인 채팅인 경우
+                    System.out.println("개인 채팅 메시지: " + sender + ": " + chatMessage);
+                    sendMessageToChatRoom(chatRoomId, sender, chatMessage);
                     DBConnector.saveMessage(chatRoomId, senderId, chatMessage); // DB에 저장
-                    sendMessageToChatRoom(chatRoomId, sender, chatMessage); // 채팅방에 전송
                 }
             }
         }
@@ -109,34 +109,22 @@ public class CalendarServer {
         private void sendMessageToChatRoom(int chatRoomId, String sender, String message) {
             synchronized (clients) {
                 for (ClientHandler client : clients) {
-                    if (client.companyId == this.companyId) {
+                    if (client.companyId == this.companyId && !client.username.equals(sender)) {
                         client.out.println("MESSAGE:" + chatRoomId + ":" + sender + ":" + message);
                     }
                 }
                 System.out.println("채팅방 " + chatRoomId + "로 메시지 전송: " + sender + ": " + message);
-            }
-
-            // 메시지를 DB에 저장
-            int senderId = DBConnector.getUserIdByUsername(sender);
-            if (senderId != -1) {
-                DBConnector.saveMessage(chatRoomId, senderId, message);
             }
         }
 
         private void sendGroupMessage(int chatRoomId, String sender, String message) {
             synchronized (clients) {
                 for (ClientHandler client : clients) {
-                    if (client.companyId == this.companyId) {
-                        client.out.println("GROUP_MESSAGE:" + sender + ":" + message);
+                    if (client.companyId == this.companyId && !client.username.equals(sender)) {
+                        client.out.println("GROUP_MESSAGE:" + chatRoomId + ":" + sender + ":" + message);
                     }
                 }
                 System.out.println("단체 채팅방 " + chatRoomId + "로 메시지 전송: " + sender + ": " + message);
-            }
-
-            // 메시지를 DB에 저장
-            int senderId = DBConnector.getUserIdByUsername(sender);
-            if (senderId != -1) {
-                DBConnector.saveMessage(chatRoomId, senderId, message);
             }
         }
 
